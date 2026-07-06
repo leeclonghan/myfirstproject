@@ -63,8 +63,8 @@ if st.session_state.events:
         else:
             return f"✅ 완료 (D+{abs(delta)})"
 
-df["디데이"] = df["마감일"].apply(calculate_dday)
-    df = df.sort_values(by="마감일") # 마감일 순으로 정렬
+    df["디데이"] = df["마감일"].apply(calculate_dday)
+    df = df.sort_values(by="마감일") # 오타가 났던 정렬 영역을 깔끔하게 '마감일' 기준으로 단일 정렬하도록 수정 완료!
 
     # 상단 카드: 마감일이 가장 가까운 3개 일정 하이라이트
     st.subheader("🚨 가장 가까운 주요 일정")
