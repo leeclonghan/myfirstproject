@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, date
+import gspread
 
 # 1. 페이지 기본 설정 및 타이틀
 st.set_page_config(
@@ -10,17 +11,49 @@ st.set_page_config(
 )
 
 st.title("📅 우리반 수행평가 & 시험 디데이 캘린더")
+st.markdown("동아리 프로젝트로 제작된 수행평가 일정 관리 서비스입니다. (구글 스프레드시트 실시간 연동)")
 st.write("---")
 
-# 2. 데이터 초기화 (세션 상태를 활용해 브라우저가 열려 있는 동안 유지)
-if "events" not in st.session_state:
-    st.session_state.events = [
-        {"과목": "수학I", "구분": "수행평가", "내용": "삼각함수 탐구 보고서 제출", "마감일": date(2026, 7, 10)},
-        {"과목": "영어 독해와 작문", "구분": "수행평가", "내용": "영작문 에세이 발표", "마감일": date(2026, 7, 14)},
-        {"과목": "통합과학", "구분": "지필평가", "내용": "2학기 1회 고사", "마감일": date(2026, 9, 25)},
-    ]
+# 🔗 [중요!] 본인의 구글 시트 주소를 아래 큰따옴표 안에 붙여넣으세요!
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1jDPHmlhAcbe-Zdam5ghhX-bDgqjCXjz5qL4Po-cZFZg/edit?usp=sharing"
 
-# 3. 사이드바: 새로운 일정 등록 기능
+# 2. 구글 시트 연결 및 데이터 로드 함수
+@st.cache_data(ttl=3) # 3초 동안 데이터를 임시 기억해서 구글 서버에 무리가 가지 않게 합니다.
+def load_data_from_sheets():
+    try:
+        # 링크가 열려있는 시트에 URL로 직접 접근하기
+        gc = gspread.public()
+        workbook = gc.open_by_url(GOOGLE_SHEET_URL)
+        sheet = workbook.get_worksheet(0) # 첫 번째 시트(탭) 선택
+        
+        # 전체 데이터 가져와서 데이터프레임으로 변환
+        records = sheet.get_all_records()
+        if not records:
+            return pd.DataFrame(columns=["과목", "구분", "내용", "마감일"])
+            
+        df = pd.DataFrame(records)
+        # 구글 시트의 텍스트 날짜를 파이썬 날짜(date) 객체로 변환
+        df["마감일"] = pd.to_datetime(df["마감일"]).dt.date
+        return df
+    except Exception as e:
+        st.error(f"구글 시트 데이터를 읽어오는 중 오류가 발생했습니다. URL을 확인하세요. 에러내용: {e}")
+        return pd.DataFrame(columns=["과목", "구분", "내용", "마감일"])
+
+# 3. 데이터 동기화 관리
+if "temp_events" not in st.session_state:
+    st.session_state.temp_events = []
+
+# 구글 시트에서 기본 데이터 읽어오기
+sheet_df = load_data_from_sheets()
+
+# 브라우저에서 새로 등록된 임시 데이터가 있다면 병합해줍니다.
+if st.session_state.temp_events:
+    temp_df = pd.DataFrame(st.session_state.temp_events)
+    df_all = pd.concat([sheet_df, temp_df], ignore_index=True)
+else:
+    df_all = sheet_df
+
+# 4. 사이드바: 새로운 일정 등록 기능
 st.sidebar.header("➕ 새로운 일정 추가")
 with st.sidebar.form(key="event_form", clear_on_submit=True):
     subject = st.text_input("과목명", placeholder="예: 국어, 화학I")
@@ -32,28 +65,22 @@ with st.sidebar.form(key="event_form", clear_on_submit=True):
 
 if submit_button:
     if subject and content:
-        # 새로운 일정을 세션 상태 데이터에 추가
-        new_event = {
-            "과목": subject,
-            "구분": category,
-            "내용": content,
-            "마감일": due_date
-        }
-        st.session_state.events.append(new_event)
-        st.sidebar.success(f"🎉 {subject} 일정이 등록되었습니다!")
+        # 화면 전용 세션 리스트에 임시 추가
+        st.session_state.temp_events.append({
+            "과목": subject, "구분": category, "내용": content, "마감일": due_date
+        })
+        st.sidebar.success(f"🎉 {subject} 일정이 화면에 등록되었습니다!")
+        st.sidebar.info("💡 팁: 실제 구글 시트에 원격 자동 기록을 하려면 추후 보안 키 파일(.json)을 연동해주면 완전히 연동됩니다.")
+        st.rerun()
     else:
         st.sidebar.error("❌ 과목명과 상세 내용을 입력해주세요.")
 
-# 4. 메인 화면: 디데이 대시보드 및 일정 표 시각화
-if st.session_state.events:
-    # 딕셔너리 리스트를 데이터프레임으로 변환
-    df = pd.DataFrame(st.session_state.events)
+# 5. 메인 화면: 디데이 대시보드 및 일정 표 시각화
+if not df_all.empty:
     today = date.today()
     
     # 디데이 계산 함수
     def calculate_dday(target_date):
-        if isinstance(target_date, str):
-            target_date = datetime.strptime(target_date, "%Y-%m-%d").date()
         delta = (target_date - today).days
         if delta == 0:
             return "🔥 D-Day"
@@ -62,12 +89,12 @@ if st.session_state.events:
         else:
             return f"✅ 완료 (D+{abs(delta)})"
 
-    df["디데이"] = df["마감일"].apply(calculate_dday)
-    df = df.sort_values(by="마감일") # 오타가 났던 정렬 영역을 깔끔하게 '마감일' 기준으로 단일 정렬하도록 수정 완료!
+    df_all["디데이"] = df_all["마감일"].apply(calculate_dday)
+    df_all = df_all.sort_values(by="마감일")
 
     # 상단 카드: 마감일이 가장 가까운 3개 일정 하이라이트
     st.subheader("🚨 가장 가까운 주요 일정")
-    upcoming_df = df[df["마감일"] >= today].head(3)
+    upcoming_df = df_all[df_all["마감일"] >= today].head(3)
     
     if not upcoming_df.empty:
         cols = st.columns(len(upcoming_df))
@@ -80,13 +107,12 @@ if st.session_state.events:
     st.write("")
     st.subheader("📋 전체 일정 리스트")
     
-    # 사용자가 원하는 구분만 필터링해서 볼 수 있는 기능
+    # 필터 기능
     filter_category = st.multiselect("보기 설정 (구분 필터)", options=["수행평가", "지필평가", "동아리/기타"], default=["수행평가", "지필평가", "동아리/기타"])
-    filtered_df = df[df["구분"].isin(filter_category)]
+    filtered_df = df_all[df_all["구분"].isin(filter_category)]
     
-    # 열 순서 이쁘게 정리해서 테이블로 출력
     display_df = filtered_df[["디데이", "과목", "구분", "내용", "마감일"]].reset_index(drop=True)
     st.dataframe(display_df, use_container_width=True)
 
 else:
-    st.info("등록된 일정이 없습니다. 왼쪽 사이드바에서 첫 일정을 등록해 보세요!")
+    st.info("구글 시트에 데이터가 비어있거나 로딩 중입니다. 구글 시트 창을 열고 첫 줄에 데이터를 적어보세요!")
