@@ -20,6 +20,9 @@ GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1jDPHmlhAcbe-Zdam5ghh
 # 🔗 [필수 수정 2] 방금 디스코드에서 복사한 웹훅 URL 주소를 넣으세요.
 DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1523567631850934383/31V09jK_uiBCBmeMT2c9mXD02P5vqoVSIguobGZioKc1h8SQyjiRRSdbeh5MVWMOXGkW"
 
+# 🔗 [필수 수정 3] 내 Streamlit 배포 웹사이트 주소를 넣으세요. (이 줄을 추가!)
+CALENDAR_SITE_URL = "https://myfirstproject-gsj9lvhdmkvcitrn59n3j9.streamlit.app/#d-9"
+
 # 2. 구글 시트 주소를 CSV 다운로드 주소로 변환하는 함수
 def get_csv_url(url):
     try:
@@ -52,7 +55,7 @@ def send_discord_alert(subject, category, content, due_date):
         dday_str = f"⏳ D-{delta}" if delta > 0 else "🔥 D-Day" if delta == 0 else f"✅ 완료 (D+{abs(delta)})"
         
         # 디스코드에 보낼 예쁜 멘트 구성
-        message = {
+       message = {
             "content": f"🚨 **[신규 일정 등록] 우리 반의 새로운 일정이 추가되었습니다!** 🚨\n"
                        f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
                        f"📌 **과목명:** {subject}\n"
@@ -60,7 +63,8 @@ def send_discord_alert(subject, category, content, due_date):
                        f"📝 **내 용:** {content}\n"
                        f"📅 **일 정:** {due_date.strftime('%Y년 %m월 %d일')} ({dday_str})\n"
                        f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                       f"💡 *지금 바로 캘린더 웹사이트에서 상세 내용을 확인해보세요!*"
+                       f"🔗 **[여기 클릭해서 캘린더 웹사이트 바로가기]({CALENDAR_SITE_URL})**\n" # 👈 이 줄을 새로 추가!
+                       f"💡 *웹사이트에서 과목별로 필터링하여 일정을 모아볼 수 있습니다.*"
         }
         
         # 인터넷을 통해 디스코드 서버로 데이터 전송 (POST 요청)
