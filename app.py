@@ -12,16 +12,17 @@ st.set_page_config(
 
 st.title("📅 우리반 수행평가 & 시험 디데이 캘린더")
 st.markdown("동아리 프로젝트로 제작된 수행평가 일정 관리 서비스입니다. (구글 시트 및 디스코드 실시간 알림 연동)")
-st.write("https://docs.google.com/spreadsheets/d/1jDPHmlhAcbe-Zdam5ghhX-bDgqjCXjz5qL4Po-cZFZg/edit?usp=sharing")
+st.write("---")
 
-# 🔗 [필수 수정 1] 본인의 구글 시트 주소를 넣으세요.
+# 🔗 [반영 완료] 구글 시트 주소
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1jDPHmlhAcbe-Zdam5ghhX-bDgqjCXjz5qL4Po-cZFZg/edit?usp=sharing"
 
-# 🔗 [필수 수정 2] 방금 디스코드에서 복사한 웹훅 URL 주소를 넣으세요.
+# 🔗 [반영 완료] 디스코드 웹훅 URL 주소
 DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1523567631850934383/31V09jK_uiBCBmeMT2c9mXD02P5vqoVSIguobGZioKc1h8SQyjiRRSdbeh5MVWMOXGkW"
 
-# 🔗 [필수 수정 3] 내 Streamlit 배포 웹사이트 주소를 넣으세요. (이 줄을 추가!)
+# 🔗 [반영 완료] Streamlit 웹사이트 배포 주소
 CALENDAR_SITE_URL = "https://myfirstproject-gsj9lvhdmkvcitrn59n3j9.streamlit.app/#d-9"
+
 
 # 2. 구글 시트 주소를 CSV 다운로드 주소로 변환하는 함수
 def get_csv_url(url):
@@ -32,6 +33,7 @@ def get_csv_url(url):
         return url
     except:
         return url
+
 
 # 3. 구글 시트 데이터 로드 함수
 @st.cache_data(ttl=3)
@@ -47,7 +49,8 @@ def load_data_from_sheets():
         st.error(f"구글 시트 데이터를 읽어오는 중 오류가 발생했습니다: {e}")
         return pd.DataFrame(columns=["과목", "구분", "내용", "마감일"])
 
-# 🔔 4. 디스코드 알림 발송 함수 (링크 추가 버전)
+
+# 🔔 4. 디스코드 알림 발송 함수 (중복 제거 및 정렬 완료 버전)
 def send_discord_alert(subject, category, content, due_date):
     try:
         # 오늘 날짜 기준으로 남은 일수(디데이) 계산
@@ -74,18 +77,9 @@ def send_discord_alert(subject, category, content, due_date):
             return True
         else:
             return False
-    except:  # 👈 딱 한 번만 깔끔하게 마무리!
-        return False
-        
-        # 인터넷을 통해 디스코드 서버로 데이터 전송 (POST 요청)
-        response = requests.post(DISCORD_WEBHOOK_URL, json=message)
-        
-        if response.status_code == 204:
-            return True
-        else:
-            return False
     except:
         return False
+
 
 # 5. 데이터 동기화 관리
 if "temp_events" not in st.session_state:
@@ -98,6 +92,7 @@ if st.session_state.temp_events:
     df_all = pd.concat([sheet_df, temp_df], ignore_index=True)
 else:
     df_all = sheet_df
+
 
 # 6. 사이드바: 새로운 일정 등록 기능
 st.sidebar.header("➕ 새로운 일정 추가")
@@ -116,7 +111,7 @@ if submit_button:
             "과목": subject, "구분": category, "내용": content, "마감일": due_date
         })
         
-        # 2. [핵심] 등록 성공 시 디스코드로 실시간 알림 쏘기!
+        # 2. 등록 성공 시 디스코드로 실시간 알림 쏘기!
         with st.spinner("디스코드로 알림을 전송하는 중..."):
             alert_success = send_discord_alert(subject, category, content, due_date)
             
@@ -128,6 +123,7 @@ if submit_button:
         st.rerun()
     else:
         st.sidebar.error("❌ 과목명과 상세 내용을 입력해주세요.")
+
 
 # 7. 메인 화면: 디데이 대시보드 및 일정 표 시각화
 if not df_all.empty:
