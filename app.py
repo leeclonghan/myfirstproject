@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, date
-import gspread
 
 # 1. 페이지 기본 설정 및 타이틀
 st.set_page_config(
@@ -11,35 +10,44 @@ st.set_page_config(
 )
 
 st.title("📅 우리반 수행평가 & 시험 디데이 캘린더")
-st.markdown("동아리 프로젝트로 제작된 수행평가 일정 관리 서비스입니다. (구글 스프레드시트 실시간 연동)")
+st.markdown("동아리 프로젝트로 제작된 수행평가 일정 관리 서비스입니다. (구글 스프레드시트 최신 연동)")
 st.write("---")
 
 # 🔗 [중요!] 본인의 구글 시트 주소를 아래 큰따옴표 안에 붙여넣으세요!
+# 링크 공유 설정은 그대로 '링크가 있는 모든 사용자 - 편집자' 상태여야 합니다.
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1jDPHmlhAcbe-Zdam5ghhX-bDgqjCXjz5qL4Po-cZFZg/edit?usp=sharing"
 
-# 2. 구글 시트 연결 및 데이터 로드 함수
-@st.cache_data(ttl=3) # 3초 동안 데이터를 임시 기억해서 구글 서버에 무리가 가지 않게 합니다.
+# 2. 구글 시트 주소를 CSV 다운로드 주소로 변환하는 함수
+def get_csv_url(url):
+    try:
+        # 구글 시트 주소 뒤의 /edit... 부분을 /export?format=csv로 바꿔서 직접 데이터를 다운로드하는 방식입니다.
+        if "/edit" in url:
+            base_url = url.split("/edit")[0]
+            return f"{base_url}/export?format=csv"
+        return url
+    except:
+        return url
+
+# 3. 구글 시트 데이터 로드 함수
+@st.cache_data(ttl=3) # 3초 캐싱
 def load_data_from_sheets():
     try:
-        # 링크가 열려있는 시트에 URL로 직접 접근하기
-        gc = gspread.public()
-        workbook = gc.open_by_url(GOOGLE_SHEET_URL)
-        sheet = workbook.get_worksheet(0) # 첫 번째 시트(탭) 선택
+        csv_url = get_csv_url(GOOGLE_SHEET_URL)
+        # 구글 시트의 데이터를 판다스(pandas)가 인터넷 주소에서 직접 긁어옵니다 (가장 안전하고 빠름)
+        df = pd.read_csv(csv_url)
         
-        # 전체 데이터 가져와서 데이터프레임으로 변환
-        records = sheet.get_all_records()
-        if not records:
+        # 만약 시트가 비어있다면 빈 데이터프레임 반환
+        if df.empty:
             return pd.DataFrame(columns=["과목", "구분", "내용", "마감일"])
             
-        df = pd.DataFrame(records)
         # 구글 시트의 텍스트 날짜를 파이썬 날짜(date) 객체로 변환
         df["마감일"] = pd.to_datetime(df["마감일"]).dt.date
         return df
     except Exception as e:
-        st.error(f"구글 시트 데이터를 읽어오는 중 오류가 발생했습니다. URL을 확인하세요. 에러내용: {e}")
+        st.error(f"구글 시트 데이터를 읽어오는 중 오류가 발생했습니다. 주소가 정확한지 확인하세요. 에러내용: {e}")
         return pd.DataFrame(columns=["과목", "구분", "내용", "마감일"])
 
-# 3. 데이터 동기화 관리
+# 4. 데이터 동기화 관리
 if "temp_events" not in st.session_state:
     st.session_state.temp_events = []
 
@@ -53,7 +61,7 @@ if st.session_state.temp_events:
 else:
     df_all = sheet_df
 
-# 4. 사이드바: 새로운 일정 등록 기능
+# 5. 사이드바: 새로운 일정 등록 기능
 st.sidebar.header("➕ 새로운 일정 추가")
 with st.sidebar.form(key="event_form", clear_on_submit=True):
     subject = st.text_input("과목명", placeholder="예: 국어, 화학I")
@@ -70,12 +78,11 @@ if submit_button:
             "과목": subject, "구분": category, "내용": content, "마감일": due_date
         })
         st.sidebar.success(f"🎉 {subject} 일정이 화면에 등록되었습니다!")
-        st.sidebar.info("💡 팁: 실제 구글 시트에 원격 자동 기록을 하려면 추후 보안 키 파일(.json)을 연동해주면 완전히 연동됩니다.")
         st.rerun()
     else:
         st.sidebar.error("❌ 과목명과 상세 내용을 입력해주세요.")
 
-# 5. 메인 화면: 디데이 대시보드 및 일정 표 시각화
+# 6. 메인 화면: 디데이 대시보드 및 일정 표 시각화
 if not df_all.empty:
     today = date.today()
     
@@ -115,4 +122,4 @@ if not df_all.empty:
     st.dataframe(display_df, use_container_width=True)
 
 else:
-    st.info("구글 시트에 데이터가 비어있거나 로딩 중입니다. 구글 시트 창을 열고 첫 줄에 데이터를 적어보세요!")
+    st.info("구글 시트에 데이터가 비어있거나 로딩 중입니다. 구글 시트 첫 줄에 데이터를 적어보세요!")
