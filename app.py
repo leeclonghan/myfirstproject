@@ -1,292 +1,94 @@
 import streamlit as st
-import time
-from game_logic_v2 import (
-    init_game_state, get_elapsed_time, get_game_time_str,
-    check_win_condition, generate_customer, add_item_to_counter,
-    scan_item, complete_payment, update_customer_patience,
-    finish_customer, check_game_over, ITEMS, calculate_total_price
-)
+import pandas as pd
+from datetime import datetime, date
 
-# ─────────────────────────────────────────
-# 페이지 설정
-# ─────────────────────────────────────────
+# 1. 페이지 기본 설정 및 타이틀
 st.set_page_config(
-    page_title="야간 편돌이",
-    page_icon="🏪",
-    layout="wide",
-    initial_sidebar_state="collapsed",
+    page_title="우리반 수행평가 & 시험 캘린더",
+    page_icon="📅",
+    layout="wide"
 )
 
-# ─────────────────────────────────────────
-# CSS 스타일
-# ─────────────────────────────────────────
-st.markdown("""
-<style>
-.stApp {
-    background: #1a1a2e;
-    color: #e0e0e0;
-}
+st.title("📅 우리반 수행평가 & 시험 디데이 캘린더")
+st.markdown("동아리 프로젝트로 제작된 수행평가 일정 관리 및 D-Day 시각화 서비스입니다.")
+st.write("---")
 
-.title {
-    text-align: center;
-    font-size: 3rem;
-    color: #ff0088;
-    text-shadow: 2px 2px 4px #000;
-    margin-bottom: 1rem;
-}
+# 2. 데이터 초기화 (세션 상태를 활용해 브라우저가 열려 있는 동안 유지)
+if "events" not in st.session_state:
+    st.session_state.events = [
+        {"과목": "수학I", "구분": "수행평가", "내용": "삼각함수 탐구 보고서 제출", "마감일": date(2026, 7, 10)},
+        {"과목": "영어 독해와 작문", "구분": "수행평가", "내용": "영작문 에세이 발표", "마감일": date(2026, 7, 14)},
+        {"과목": "통합과학", "구분": "지필평가", "내용": "2학기 1회 고사", "마감일": date(2026, 9, 25)},
+    ]
 
-.counter-area {
-    background: #2a2a3e;
-    border: 3px solid #4a4a8a;
-    border-radius: 10px;
-    padding: 20px;
-    min-height: 400px;
-}
-
-.customer-info {
-    background: #3a3a4e;
-    border: 2px solid #666;
-    border-radius: 8px;
-    padding: 15px;
-    margin-bottom: 15px;
-}
-
-.item-card {
-    background: white;
-    color: black;
-    border-radius: 8px;
-    padding: 12px;
-    margin: 8px;
-    text-align: center;
-    cursor: pointer;
-    border: 2px solid #ddd;
-    transition: all 0.2s;
-}
-
-.item-card:hover {
-    border-color: #ff0088;
-    transform: scale(1.05);
-}
-
-.item-card.scanned {
-    background: #90EE90;
-    opacity: 0.6;
-}
-
-.pos-display {
-    background: #000;
-    color: #0f0;
-    border: 3px solid #666;
-    border-radius: 8px;
-    padding: 20px;
-    font-family: monospace;
-    font-size: 1.2rem;
-    margin: 15px 0;
-}
-
-.stress-bar {
-    width: 100%;
-    height: 30px;
-    background: #333;
-    border-radius: 15px;
-    overflow: hidden;
-    border: 2px solid #fff;
-    margin: 10px 0;
-}
-
-.stress-fill {
-    height: 100%;
-    transition: width 0.3s ease;
-}
-
-.button-group {
-    display: flex;
-    gap: 10px;
-    margin: 15px 0;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# ─────────────────────────────────────────
-# 세션 상태 초기화
-# ─────────────────────────────────────────
-if "gs" not in st.session_state:
-    st.session_state.gs = init_game_state()
-    st.session_state.last_item_spawn = time.time()
-    st.session_state.next_customer_time = time.time() + 3
-
-def gs():
-    return st.session_state.gs
-
-# ─────────────────────────────────────────
-# 메인 게임 화면
-# ─────────────────────────────────────────
-def render_game():
-    g = gs()
+# 3. 사이드바: 새로운 일정 등록 기능
+st.sidebar.header("➕ 새로운 일정 추가")
+with st.sidebar.form(key="event_form", clear_on_submit=True):
+    subject = st.text_input("과목명", placeholder="예: 국어, 화학I")
+    category = st.selectbox("구분", ["수행평가", "지필평가", "동아리/기타"])
+    content = st.text_area("상세 내용", placeholder="수행평가 주제 및 준비물 등")
+    due_date = st.date_input("마감일 / 시험일", value=date.today())
     
-    # 상단 상태바
-    col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
-    with col1:
-        st.markdown(f"### ⏰ {get_game_time_str(g)}")
-    with col2:
-        st.markdown(f"### 💰 {g['money']:,}원")
-    with col3:
-        st.markdown(f"### 👤 {g['customers_served']}명")
-    with col4:
-        st.markdown(f"### ⏱️ {get_elapsed_time(g)}초")
-    
-    st.divider()
-    
-    # 게임 루프 처리
-    current_time = time.time()
-    
-    # 새 손님 스폰
-    if g["current_customer"] is None and current_time >= st.session_state.next_customer_time:
-        g["current_customer"] = generate_customer()
-        g["phase"] = "waiting"
-        st.session_state.last_item_spawn = current_time
-        st.session_state.next_customer_time = current_time + 5
-    
-    # 손님이 물건을 계산대에 올려놓음 (자동 스폰)
-    if g["current_customer"] and len(g["items_on_counter"]) < len(g["current_customer"]["items"]):
-        if current_time - st.session_state.last_item_spawn > 1:  # 1초마다 물건 추가
-            add_item_to_counter(g)
-            st.session_state.last_item_spawn = current_time
-    
-    # 손님 인내심 업데이트
-    if not update_customer_patience(g):
-        st.warning("😡 손님이 화가 나서 나갔습니다!")
-        st.rerun()
-    
-    # 게임 오버 확인 (스트레스 시스템 제거됨)
-    
-    # 승리 조건 확인
-    check_win_condition(g)
-    if g["game_won"]:
-        st.balloons()
-        st.success("🌅 퇴근 성공! 축하합니다!")
-        g["game_won"] = True
-    
-    # ─────────────────────────────────────────
-    # 메인 게임 영역
-    # ─────────────────────────────────────────
-    
-    if g["current_customer"] is None:
-        st.markdown("<div style='text-align:center; padding:100px;'><h2>손님을 기다리는 중...</h2></div>", unsafe_allow_html=True)
+    submit_button = st.form_submit_button(label="일정 등록하기")
+
+if submit_button:
+    if subject and content:
+        # 새로운 일정을 세션 상태 데이터에 추가
+        new_event = {
+            "과목": subject,
+            "구분": category,
+            "내용": content,
+            "마감일": due_date
+        }
+        st.session_state.events.append(new_event)
+        st.sidebar.success(f"🎉 {subject} 일정이 등록되었습니다!")
     else:
-        customer = g["current_customer"]
-        
-        # 손님 정보
-        st.markdown(f"""
-        <div class="customer-info">
-            <h3>{customer['name']}님이 계산대에 왔습니다!</h3>
-            <p>인내심: {'❤️' * max(1, int(g['patience_left'] / 10))} ({int(g['patience_left'])}%)</p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # 계산대 (물건 표시)
-        st.markdown("### 📦 계산대 (물건을 클릭해서 스캔하세요!)")
-        
-        if g["items_on_counter"]:
-            cols = st.columns(4)
-            for i, item_key in enumerate(g["items_on_counter"]):
-                with cols[i % 4]:
-                    item = ITEMS[item_key]
-                    if st.button(f"{item['emoji']}\n{item['name']}\n{item['price']}원", key=f"item_{i}_{item_key}"):
-                        scan_item(g, item_key)
-                        st.rerun()
+        st.sidebar.error("❌ 과목명과 상세 내용을 입력해주세요.")
+
+# 4. 메인 화면: 디데이 대시보드 및 일정 표 시각화
+if st.session_state.events:
+    # 딕셔너리 리스트를 데이터프레임으로 변환
+    df = pd.DataFrame(st.session_state.events)
+    today = date.today()
+    
+    # 디데이 계산 함수
+    def calculate_dday(target_date):
+        if isinstance(target_date, str):
+            target_date = datetime.strptime(target_date, "%Y-%m-%d").date()
+        delta = (target_date - today).days
+        if delta == 0:
+            return "🔥 D-Day"
+        elif delta > 0:
+            return f"⏳ D-{delta}"
         else:
-            st.info("물건을 기다리는 중...")
-        
-        st.divider()
-        
-        # POS 화면
-        st.markdown("### 🖥️ POS 화면")
-        st.markdown(f"""
-        <div class="pos-display">
-        ═══════════════════════════════════<br>
-        스캔된 물건: {len(g['scanned_items'])}개<br>
-        ═══════════════════════════════════<br>
-        <span style="color: #ffff00; font-size: 1.5rem;">
-        총액: {g['total_price']:,}원
-        </span><br>
-        ═══════════════════════════════════
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # 결제 방식 선택
-        if g["total_price"] > 0 and len(g["items_on_counter"]) == 0:
-            st.markdown("### 💳 결제 방식 선택")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                if st.button("💵 현금 결제", use_container_width=True):
-                    success, msg = complete_payment(g, "cash", g["total_price"])
-                    if success:
-                        st.success(f"✅ 결제 완료! {msg}")
-                        finish_customer(g)
-                        time.sleep(1)
-                        st.rerun()
-                    else:
-                        st.error(msg)
-            
-            with col2:
-                if st.button("💳 카드 결제", use_container_width=True):
-                    success, msg = complete_payment(g, "card", g["total_price"])
-                    if success:
-                        st.success(f"✅ 결제 완료! {msg}")
-                        finish_customer(g)
-                        time.sleep(1)
-                        st.rerun()
-                    else:
-                        st.error(msg)
+            return f"✅ 완료 (D+{abs(delta)})"
+
+    df["디데이"] = df["마감일"].apply(calculate_dday)
+    df = df.sort_values(by="mar_date", errors='ignore') # 마감일 순 정렬을 위해 정렬 기준 맞춤
+    df = df.sort_values(by="마감일")
+
+    # 상단 카드: 마감일이 가장 가까운 3개 일정 하이라이트
+    st.subheader("🚨 가장 가까운 주요 일정")
+    upcoming_df = df[df["마감일"] >= today].head(3)
     
-    # 자동 새로고침
-    time.sleep(0.5)
-    st.rerun()
-
-
-def render_title():
-    st.markdown("<h1 class='title'>🏪 야간 편돌이</h1>", unsafe_allow_html=True)
-    st.markdown("<div style='text-align:center;'><h3>슈의 라면가게 스타일 편의점 계산 시뮬레이션</h3></div>", unsafe_allow_html=True)
-    
-    col1, col2, col3 = st.columns([1, 1, 1])
-    with col2:
-        if st.button("🌙 영업 시작!", use_container_width=True, key="start_game"):
-            st.session_state.gs = init_game_state()
-            st.session_state.game_started = True
-            st.rerun()
-
-
-def render_game_over():
-    g = gs()
-    if g["game_won"]:
-        st.balloons()
-        st.markdown("<h1 style='text-align:center; color:#00ff88;'>🌅 퇴근 성공!</h1>", unsafe_allow_html=True)
+    if not upcoming_df.empty:
+        cols = st.columns(len(upcoming_df))
+        for idx, row in enumerate(upcoming_df.itertuples()):
+            with cols[idx]:
+                st.info(f"**[{row.구분}] {row.과목}**\n\n### {row.디데이}\n\n📅 {row.마감일}")
     else:
-        st.markdown("<h1 style='text-align:center; color:#ff0000;'>😱 멘탈 붕괴</h1>", unsafe_allow_html=True)
-    
-    st.markdown(f"""
-    <div style='text-align:center; font-size:1.5rem;'>
-        <p>최종 매출: <span style='color:#ffff00;'>{g['money']:,}원</span></p>
-        <p>처리한 손님: <span style='color:#00ff88;'>{g['customers_served']}명</span></p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    if st.button("다시 도전하기", use_container_width=True):
-        st.session_state.gs = init_game_state()
-        st.session_state.game_started = False
-        st.rerun()
+        st.success("🎉 다가오는 남은 일정이 없습니다! 여유를 즐기세요.")
 
+    st.write("")
+    st.subheader("📋 전체 일정 리스트")
+    
+    # 사용자가 원하는 구분만 필터링해서 볼 수 있는 기능
+    filter_category = st.multiselect("보기 설정 (구분 필터)", options=["수행평가", "지필평가", "동아리/기타"], default=["수행평가", "지필평가", "동아리/기타"])
+    filtered_df = df[df["구분"].isin(filter_category)]
+    
+    # 열 순서 이쁘게 정리해서 테이블로 출력
+    display_df = filtered_df[["디데이", "과목", "구분", "내용", "마감일"]].reset_index(drop=True)
+    st.dataframe(display_df, use_container_width=True)
 
-# ─────────────────────────────────────────
-# 메인 루프
-# ─────────────────────────────────────────
-if __name__ == "__main__":
-    if not st.session_state.get("game_started", False):
-        render_title()
-    elif gs()["game_over"] or gs()["game_won"]:
-        render_game_over()
-    else:
-        render_game()
+else:
+    st.info("등록된 일정이 없습니다. 왼쪽 사이드바에서 첫 일정을 등록해 보세요!")
